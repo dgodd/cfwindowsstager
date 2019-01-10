@@ -78,29 +78,18 @@ func stage() error {
 		return errors.Wrap(err, "container create")
 	}
 	defer client.ContainerRemove(ctx, ctr.ID, dockertypes.ContainerRemoveOptions{})
-	fmt.Println("CTR ID:", ctr.ID)
 
 	tr, err := archive.TarWithOptions("/Users/davegoddard/workspace/ruby-buildpack/fixtures/sinatra", &archive.TarOptions{})
 	if err != nil {
 		return errors.Wrap(err, "tar app before copying to container")
 	}
-	if err := client.CopyToContainer(ctx, ctr.ID, "/app", tr, dockertypes.CopyToContainerOptions{}); err != nil {
+	if err := client.CopyToContainer(ctx, ctr.ID, "/home/vcap/app", tr, dockertypes.CopyToContainerOptions{}); err != nil {
 		return errors.Wrap(err, "copy app tar to container")
 	}
 
 	if err := RunContainer(client, ctx, ctr.ID, os.Stdout, os.Stderr); err != nil {
 		return errors.Wrap(err, "container run")
 	}
-
-	// FIXME need to copy files from this container to the image. Assume better to copy directly
-	// if rc, _, err := client.CopyFromContainer(ctx, ctr.ID, "/tmp/droplet"); err != nil {
-	// 	return errors.Wrap(err, "copy droplet out")
-	// } else {
-	// 	defer rc.Close()
-	// 	f, _ := os.Create("/tmp/droplet.tar")
-	// 	defer f.Close()
-	// 	_, _ = io.Copy(f, rc)
-	// }
 
 	startCommand, err := ResultJSONProcessType(client, ctx, ctr.ID, "/tmp/result.json")
 	if err != nil {
@@ -111,12 +100,16 @@ func stage() error {
 	// TODO expose port 8080
 	ctr2, err := client.ContainerCreate(ctx, &container.Config{
 		Image: "cflinuxfs3wbal",
-		Cmd:   []string{"bash", "-c", startCommand},
+		Cmd:   []string{"/tmp/lifecycle/launcher", "/home/vcap/app", startCommand, ""},
 	}, &container.HostConfig{}, nil, "")
 	if err != nil {
 		return errors.Wrap(err, "create container to commit")
 	}
 	defer client.ContainerRemove(ctx, ctr2.ID, dockertypes.ContainerRemoveOptions{})
+
+	if err := CopyDropletToContainer(client, ctx, ctr.ID, ctr2.ID); err != nil {
+		return errors.Wrap(err, "copy droplet to base container")
+	}
 
 	if _, err := client.ContainerCommit(ctx, ctr2.ID, dockertypes.ContainerCommitOptions{
 		Reference: "fixme/dave-app",
@@ -150,6 +143,27 @@ func ResultJSONProcessType(client *dockercli.Client, ctx context.Context, ctrID 
 		return "", errors.Wrap(err, "parsing result.json from container")
 	}
 	return result.ProcessTypes.Web, nil
+}
+
+func CopyDropletToContainer(client *dockercli.Client, ctx context.Context, srcID, destID string) error {
+	rc, _, err := client.CopyFromContainer(ctx, srcID, "/tmp/droplet")
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+	_, err = tr.Next()
+	if err != nil {
+		return err
+	}
+
+	if err := client.CopyToContainer(ctx, destID, "/home/vcap", tr, dockertypes.CopyToContainerOptions{
+		AllowOverwriteDirWithFile: true,
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func main() {
