@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -17,6 +18,7 @@ import (
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
 )
 
 func NewClient() (*dockercli.Client, error) {
@@ -59,7 +61,7 @@ func RunContainer(d *dockercli.Client, ctx context.Context, id string, stdout io
 	return <-copyErr
 }
 
-func stage() error {
+func stage(imageRef, appPath string, buildpacks []string) error {
 	client, err := NewClient()
 
 	ctx := context.Background()
@@ -72,8 +74,8 @@ func stage() error {
 			// "-buildArtifactsCacheDir=/tmp/cache",
 			"-outputDroplet=/tmp/droplet",
 			"-outputMetadata=/tmp/result.json",
-			"-buildpackOrder=/Users/davegoddard/Downloads/ruby-buildpack-cflinuxfs3-v1.7.29.zip", // comma-separated list of buildpacks, to be tried in order
-			// "-skipDetect",
+			"-buildpackOrder=" + strings.Join(buildpacks, ","),
+			"-skipDetect", // TODO configurable, maybe based on number of buildpacks?
 			// "-skipCertVerify", // skip SSL certificate verification
 		},
 	}, nil, nil, "")
@@ -82,11 +84,11 @@ func stage() error {
 	}
 	defer client.ContainerRemove(ctx, ctr.ID, dockertypes.ContainerRemoveOptions{})
 
-	if err := CopyBuildpacksToContainer(client, ctx, ctr.ID); err != nil {
+	if err := CopyBuildpacksToContainer(client, ctx, ctr.ID, buildpacks); err != nil {
 		return errors.Wrap(err, "copy local buildpacks to container")
 	}
 
-	tr, err := archive.TarWithOptions("/Users/davegoddard/workspace/ruby-buildpack/fixtures/sinatra", &archive.TarOptions{})
+	tr, err := archive.TarWithOptions(appPath, &archive.TarOptions{})
 	if err != nil {
 		return errors.Wrap(err, "tar app before copying to container")
 	}
@@ -119,7 +121,7 @@ func stage() error {
 	}
 
 	if _, err := client.ContainerCommit(ctx, ctr2.ID, dockertypes.ContainerCommitOptions{
-		Reference: "fixme/dave-app",
+		Reference: imageRef,
 	}); err != nil {
 		return errors.Wrap(err, "create image from container")
 	}
@@ -173,20 +175,27 @@ func CopyDropletToContainer(client *dockercli.Client, ctx context.Context, srcID
 	return nil
 }
 
-func CopyBuildpacksToContainer(client *dockercli.Client, ctx context.Context, ctrID string) error {
-	// tr, err := archive.TarWithOptions("/Users/davegoddard/Downloads/ruby-buildpack-cflinuxfs3-v1.7.29.zip", &archive.TarOptions{})
-	bpPath := "/Users/davegoddard/Downloads/ruby-buildpack-cflinuxfs3-v1.7.29.zip"
-	tr, err := ConvertZipToTar(bpPath)
-	if err != nil {
-		return errors.Wrap(err, "tar buildpack before copying to container")
-	}
-	if err := client.CopyToContainer(ctx, ctrID, "/buildpacks/", tr, dockertypes.CopyToContainerOptions{}); err != nil {
-		return errors.Wrap(err, "copy buildpacks to container")
+func CopyBuildpacksToContainer(client *dockercli.Client, ctx context.Context, ctrID string, buildpacks []string) error {
+	for _, bpPath := range buildpacks {
+		if strings.HasPrefix("https://", bpPath) || strings.HasPrefix("http://", bpPath) {
+			fmt.Println("Use online buildpack:", bpPath)
+			continue
+		}
+		// TODO check file exists to give better error
+		fmt.Println("Copy local buildpack", bpPath, "to container")
+		pathMD5 := fmt.Sprintf("%x", md5.Sum([]byte(bpPath)))
+		tr, err := ConvertZipToTar(bpPath, pathMD5+"/")
+		if err != nil {
+			return errors.Wrap(err, "tar buildpack before copying to container")
+		}
+		if err := client.CopyToContainer(ctx, ctrID, "/buildpacks/", tr, dockertypes.CopyToContainerOptions{}); err != nil {
+			return errors.Wrap(err, "copy buildpacks to container")
+		}
 	}
 	return nil
 }
 
-func ConvertZipToTar(path string) (io.Reader, error) {
+func ConvertZipToTar(path, prefix string) (io.Reader, error) {
 	// TODO use a pipe rather than in memory
 	r, err := zip.OpenReader(path)
 	if err != nil {
@@ -196,11 +205,9 @@ func ConvertZipToTar(path string) (io.Reader, error) {
 
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	pathMD5 := fmt.Sprintf("%x", md5.Sum([]byte(path))) + "/"
-	fmt.Println("BP PATH:", path, pathMD5)
 
 	for _, f := range r.File {
-		hdr := &tar.Header{Name: pathMD5 + f.Name, Size: int64(f.UncompressedSize64), Mode: int64(f.Mode())}
+		hdr := &tar.Header{Name: prefix + f.Name, Size: int64(f.UncompressedSize64), Mode: int64(f.Mode())}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return nil, err
 		}
@@ -219,7 +226,12 @@ func ConvertZipToTar(path string) (io.Reader, error) {
 }
 
 func main() {
-	if err := stage(); err != nil {
+	var imageRef = pflag.String("image", "fixme/myapp", "name of docker image to build")
+	var appPath = pflag.String("app", ".", "path to app to push")
+	var buildpacks = pflag.StringSlice("buildpack", []string{"https://github.com/cloudfoundry/hwc-buildpack/releases/download/v3.1.3/hwc-buildpack-windows2016-v3.1.3.zip"}, "buildpacks to use, either http url or local zip file")
+	pflag.Parse()
+
+	if err := stage(*imageRef, *appPath, *buildpacks); err != nil {
 		fmt.Println("ERROR:", err)
 		os.Exit(1)
 	}
