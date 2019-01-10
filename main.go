@@ -9,6 +9,7 @@ import (
 	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	dockercli "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/pkg/errors"
 )
@@ -63,10 +64,17 @@ func stage() error {
 			Image: "cflinuxfs3wbal",
 			Cmd: []string{
 				"/tmp/lifecycle/builder",
-				// "-buildpacks", buildpacksDir,
-				// "-order", orderPath,
-				// "-group", groupPath,
-				// "-plan", planPath,
+				"-buildDir=/app",
+				"-buildpacksDir=/tmp/buildpacks",
+				"-outputDroplet=/tmp/droplet",
+				"-outputMetadata=/tmp/result.json",
+				// "-skipDetect",
+				"-buildpackOrder=https://github.com/cloudfoundry/ruby-buildpack/releases/download/v1.7.29/ruby-buildpack-cflinuxfs3-v1.7.29.zip", // comma-separated list of buildpacks, to be tried in order
+
+				// -buildArtifactsCacheDir string
+				// directory where previous cached build artifacts should be extracted (default "/tmp/cache")
+				// -skipCertVerify
+				// skip SSL certificate verification
 			},
 		},
 		nil, // &container.HostConfig{
@@ -79,6 +87,14 @@ func stage() error {
 	}
 	defer client.ContainerRemove(ctx, ctr.ID, dockertypes.ContainerRemoveOptions{})
 	fmt.Println("CTR ID:", ctr.ID)
+
+	tr, err := archive.TarWithOptions("/Users/davegoddard/workspace/ruby-buildpack/fixtures/sinatra", &archive.TarOptions{})
+	if err != nil {
+		return errors.Wrap(err, "tar app before copying to container")
+	}
+	if err := client.CopyToContainer(ctx, ctr.ID, "/app", tr, dockertypes.CopyToContainerOptions{}); err != nil {
+		return errors.Wrap(err, "copy app tar to container")
+	}
 
 	if err := RunContainer(client, ctx, ctr.ID, os.Stdout, os.Stderr); err != nil {
 		return errors.Wrap(err, "container run")

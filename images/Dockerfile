@@ -1,5 +1,5 @@
 # cloudfoundry/cflinuxfs2 ; cloudfoundry/cflinuxfs2 ; cloudfoundry/windows2016fs
-ARG stack
+ARG stack=cflinuxfs3
 
 FROM golang:1.9.6 as lifecycle
 ARG diego_version=2.7.0
@@ -22,5 +22,7 @@ RUN GOPATH=/diego CGO_ENABLED=0 go install -a -installsuffix static "${bal_repo}
 
 FROM cloudfoundry/${stack}
 COPY --from=lifecycle /diego/bin /tmp/lifecycle
+ENV CF_STACK ${stack}
+ENV CF_STACK cflinuxfs3
 WORKDIR /home/vcap
 # RUN mkdir /home/vcap/app && ln -s /home/vcap/app /app
