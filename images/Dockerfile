@@ -25,4 +25,5 @@ COPY --from=lifecycle /diego/bin /tmp/lifecycle
 ENV CF_STACK ${stack}
 ENV CF_STACK cflinuxfs3
 WORKDIR /home/vcap
+RUN mkdir /buildpacks
 # RUN mkdir /home/vcap/app && ln -s /home/vcap/app /app
