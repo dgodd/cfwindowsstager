@@ -73,11 +73,7 @@ func stage() error {
 			"-buildpackOrder=https://github.com/cloudfoundry/ruby-buildpack/releases/download/v1.7.29/ruby-buildpack-cflinuxfs3-v1.7.29.zip", // comma-separated list of buildpacks, to be tried in order
 			// "-skipCertVerify", // skip SSL certificate verification
 		},
-	}, &container.HostConfig{
-		// Binds: []string{
-		// 	fmt.Sprintf("%s:%s:", "dgodd-ruby-app-cache-FIXME", "/tmp/cache"),
-		// },
-	}, nil, "")
+	}, nil, nil, "")
 	if err != nil {
 		return errors.Wrap(err, "container create")
 	}
@@ -111,6 +107,22 @@ func stage() error {
 		return errors.Wrap(err, "find start command")
 	}
 	fmt.Println("START COMMAND:", startCommand)
+
+	// TODO expose port 8080
+	ctr2, err := client.ContainerCreate(ctx, &container.Config{
+		Image: "cflinuxfs3wbal",
+		Cmd:   []string{"bash", "-c", startCommand},
+	}, &container.HostConfig{}, nil, "")
+	if err != nil {
+		return errors.Wrap(err, "create container to commit")
+	}
+	defer client.ContainerRemove(ctx, ctr2.ID, dockertypes.ContainerRemoveOptions{})
+
+	if _, err := client.ContainerCommit(ctx, ctr2.ID, dockertypes.ContainerCommitOptions{
+		Reference: "fixme/dave-app",
+	}); err != nil {
+		return errors.Wrap(err, "create image from container")
+	}
 
 	return nil
 }
