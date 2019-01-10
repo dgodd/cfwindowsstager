@@ -66,9 +66,9 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 
 	ctx := context.Background()
 	ctr, err := client.ContainerCreate(ctx, &container.Config{
-		Image: "cflinuxfs3wbal",
+		Image: "dgodd/windows2016fs",
 		Cmd: []string{
-			"/tmp/lifecycle/builder",
+			"/lifecycle/builder.exe",
 			"-buildDir=/home/vcap/app",
 			"-buildpacksDir=/buildpacks",
 			// "-buildArtifactsCacheDir=/tmp/cache",
@@ -108,8 +108,8 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 
 	// TODO expose port 8080
 	ctr2, err := client.ContainerCreate(ctx, &container.Config{
-		Image: "cflinuxfs3wbal",
-		Cmd:   []string{"/tmp/lifecycle/launcher", "/home/vcap/app", startCommand, ""},
+		Image: "dgodd/windows2016fs",
+		Cmd:   []string{"/lifecycle/launcher.exe", "/home/vcap/app", startCommand, ""},
 	}, &container.HostConfig{}, nil, "")
 	if err != nil {
 		return errors.Wrap(err, "create container to commit")
@@ -177,7 +177,7 @@ func CopyDropletToContainer(client *dockercli.Client, ctx context.Context, srcID
 
 func CopyBuildpacksToContainer(client *dockercli.Client, ctx context.Context, ctrID string, buildpacks []string) error {
 	for _, bpPath := range buildpacks {
-		if strings.HasPrefix("https://", bpPath) || strings.HasPrefix("http://", bpPath) {
+		if strings.HasPrefix(bpPath, "https://") || strings.HasPrefix(bpPath, "http://") {
 			fmt.Println("Use online buildpack:", bpPath)
 			continue
 		}

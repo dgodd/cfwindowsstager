@@ -1,6 +1,7 @@
 module github.com/dgodd/cfwindowsstager
 
 require (
+	github.com/Microsoft/go-winio v0.4.11 // indirect
 	github.com/containerd/continuity v0.0.0-20181203112020-004b46473808 // indirect
 	github.com/docker/distribution v2.7.0+incompatible // indirect
 	github.com/docker/docker v0.7.3-0.20181027010111-b8e87cfdad8d
