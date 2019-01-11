@@ -68,7 +68,7 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 	ctr, err := client.ContainerCreate(ctx, &container.Config{
 		Image: "dgodd/windows2016fs",
 		Cmd: []string{
-			"/lifecycle/builder.exe",
+			"/tmp/lifecycle/builder.exe",
 			"-buildDir=/home/vcap/app",
 			"-buildpacksDir=/buildpacks",
 			// "-buildArtifactsCacheDir=/tmp/cache",
@@ -109,7 +109,7 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 	// TODO expose port 8080
 	ctr2, err := client.ContainerCreate(ctx, &container.Config{
 		Image: "dgodd/windows2016fs",
-		Cmd:   []string{"/lifecycle/launcher.exe", "/home/vcap/app", startCommand, ""},
+		Cmd:   []string{"/tmp/lifecycle/launcher.exe", "/home/vcap/app", startCommand, ""},
 	}, &container.HostConfig{}, nil, "")
 	if err != nil {
 		return errors.Wrap(err, "create container to commit")
