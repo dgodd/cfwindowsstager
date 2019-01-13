@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	dockertypes "github.com/docker/docker/api/types"
@@ -67,6 +68,8 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 	ctx := context.Background()
 	ctr, err := client.ContainerCreate(ctx, &container.Config{
 		Image: "dgodd/windows2016fs",
+		// Cmd:   []string{"powershell", "-Command", `Get-ChildItem -Recurse $pwd`},
+		// Cmd: []string{"powershell", "-Command", `Get-ChildItem env:`},
 		Cmd: []string{
 			"/tmp/lifecycle/builder.exe",
 			"-buildDir=/home/vcap/app",
@@ -96,9 +99,13 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 		return errors.Wrap(err, "copy app tar to container")
 	}
 
+	fmt.Println("DG: About to run builder.exe")
+
 	if err := RunContainer(client, ctx, ctr.ID, os.Stdout, os.Stderr); err != nil {
 		return errors.Wrap(err, "container run")
 	}
+
+	fmt.Println("DG: FINITO run builder.exe")
 
 	startCommand, err := ResultJSONProcessType(client, ctx, ctr.ID, "/tmp/result.json")
 	if err != nil {
@@ -230,6 +237,23 @@ func main() {
 	var appPath = pflag.String("app", ".", "path to app to push")
 	var buildpacks = pflag.StringSlice("buildpack", []string{"https://github.com/cloudfoundry/hwc-buildpack/releases/download/v3.1.3/hwc-buildpack-windows2016-v3.1.3.zip"}, "buildpacks to use, either http url or local zip file")
 	pflag.Parse()
+
+	var err error
+	*appPath, err = filepath.Abs(*appPath)
+	if err != nil {
+		fmt.Println("ERROR:", err)
+		os.Exit(1)
+	}
+	// TODO there is some bug with absolute path that stalls builder.exe, I don't know what, but relative appears to work
+	// for idx, path := range *buildpacks {
+	// 	(*buildpacks)[idx], err = filepath.Abs(path)
+	// 	if err != nil {
+	// 		fmt.Println("ERROR:", err)
+	// 		os.Exit(1)
+	// 	}
+	// }
+
+	fmt.Println("ARGS:", *imageRef, *appPath, *buildpacks)
 
 	if err := stage(*imageRef, *appPath, *buildpacks); err != nil {
 		fmt.Println("ERROR:", err)
