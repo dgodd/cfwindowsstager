@@ -67,7 +67,7 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 
 	ctx := context.Background()
 	ctr, err := client.ContainerCreate(ctx, &container.Config{
-		Image: "dgodd/windows2016fs",
+		Image: "dgodd/windows2016fs:1803",
 		// Cmd:   []string{"powershell", "-Command", `Get-ChildItem -Recurse $pwd`},
 		// Cmd: []string{"powershell", "-Command", `Get-ChildItem env:`},
 		Cmd: []string{
@@ -113,9 +113,9 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 	}
 	fmt.Println("START COMMAND:", startCommand)
 
-	// TODO expose port 8080
+	// TODO expose port 8080 (and set PORT env)
 	ctr2, err := client.ContainerCreate(ctx, &container.Config{
-		Image: "dgodd/windows2016fs",
+		Image: "dgodd/windows2016fs:1803",
 		Cmd:   []string{"/tmp/lifecycle/launcher.exe", "/home/vcap/app", startCommand, ""},
 	}, &container.HostConfig{}, nil, "")
 	if err != nil {
