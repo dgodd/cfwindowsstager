@@ -20,6 +20,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
+	"github.com/docker/go-connections/nat"
 )
 
 func NewClient() (*dockercli.Client, error) {
@@ -67,7 +68,7 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 
 	ctx := context.Background()
 	ctr, err := client.ContainerCreate(ctx, &container.Config{
-		Image: "dgodd/windows2016fs:1803",
+		Image: "dgodd/windows2016fs",
 		// Cmd:   []string{"powershell", "-Command", `Get-ChildItem -Recurse $pwd`},
 		// Cmd: []string{"powershell", "-Command", `Get-ChildItem env:`},
 		Cmd: []string{
@@ -115,9 +116,23 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 
 	// TODO expose port 8080 (and set PORT env)
 	ctr2, err := client.ContainerCreate(ctx, &container.Config{
-		Image: "dgodd/windows2016fs:1803",
+		Image: "dgodd/windows2016fs",
 		Cmd:   []string{"/tmp/lifecycle/launcher.exe", "/home/vcap/app", startCommand, ""},
-	}, &container.HostConfig{}, nil, "")
+		Env: []string{
+  			//"VCAP_SERVICES={}",
+  			"PORT=8080",
+  			"VCAP_APP_HOST=0.0.0.0",
+			"VCAP_APP_PORT=8080",
+  			//"CF_INSTANCE_IP=10.10.149.44",
+  			//"CF_INSTANCE_PORT=40008",
+			//"CF_INSTANCE_ADDR=10.10.149.44:40008",
+		},
+		ExposedPorts: nat.PortSet{
+			"8080": struct{}{},
+		},
+	}, &container.HostConfig{
+
+	}, nil, "")
 	if err != nil {
 		return errors.Wrap(err, "create container to commit")
 	}
@@ -259,4 +274,6 @@ func main() {
 		fmt.Println("ERROR:", err)
 		os.Exit(1)
 	}
+
+	fmt.Println("\nTo run:\n  docker run --rm --name=fixme_myapp -d -e PORT=8080 -p 8080:8080 fixme/myapp\nThen to stop:\n  docker kill fixme_myapp")
 }
