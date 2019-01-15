@@ -15,3 +15,5 @@ go build
 
 docker run -e PORT=8080 -p 8080:8080 fixme/myapp
 ```
+
+Then to see the results `Invoke-WebRequest -Uri http://127.0.0.1:8080/ -UseBasicParsing`

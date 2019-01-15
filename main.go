@@ -119,20 +119,14 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 		Image: "dgodd/windows2016fs",
 		Cmd:   []string{"/tmp/lifecycle/launcher.exe", "/home/vcap/app", startCommand, ""},
 		Env: []string{
-  			//"VCAP_SERVICES={}",
   			"PORT=8080",
   			"VCAP_APP_HOST=0.0.0.0",
 			"VCAP_APP_PORT=8080",
-  			//"CF_INSTANCE_IP=10.10.149.44",
-  			//"CF_INSTANCE_PORT=40008",
-			//"CF_INSTANCE_ADDR=10.10.149.44:40008",
 		},
 		ExposedPorts: nat.PortSet{
 			"8080": struct{}{},
 		},
-	}, &container.HostConfig{
-
-	}, nil, "")
+	}, nil, nil, "")
 	if err != nil {
 		return errors.Wrap(err, "create container to commit")
 	}
