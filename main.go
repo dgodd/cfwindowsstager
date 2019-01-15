@@ -18,9 +18,9 @@ import (
 	dockercli "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/docker/go-connections/nat"
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
-	"github.com/docker/go-connections/nat"
 )
 
 func NewClient() (*dockercli.Client, error) {
@@ -63,14 +63,12 @@ func RunContainer(d *dockercli.Client, ctx context.Context, id string, stdout io
 	return <-copyErr
 }
 
-func stage(imageRef, appPath string, buildpacks []string) error {
+func stage(imageRef, baseImageRef, appPath string, buildpacks []string) error {
 	client, err := NewClient()
 
 	ctx := context.Background()
 	ctr, err := client.ContainerCreate(ctx, &container.Config{
-		Image: "dgodd/windows2016fs",
-		// Cmd:   []string{"powershell", "-Command", `Get-ChildItem -Recurse $pwd`},
-		// Cmd: []string{"powershell", "-Command", `Get-ChildItem env:`},
+		Image: baseImageRef,
 		Cmd: []string{
 			"/tmp/lifecycle/builder.exe",
 			"-buildDir=/home/vcap/app",
@@ -100,27 +98,22 @@ func stage(imageRef, appPath string, buildpacks []string) error {
 		return errors.Wrap(err, "copy app tar to container")
 	}
 
-	fmt.Println("DG: About to run builder.exe")
-
 	if err := RunContainer(client, ctx, ctr.ID, os.Stdout, os.Stderr); err != nil {
 		return errors.Wrap(err, "container run")
 	}
-
-	fmt.Println("DG: FINITO run builder.exe")
 
 	startCommand, err := ResultJSONProcessType(client, ctx, ctr.ID, "/tmp/result.json")
 	if err != nil {
 		return errors.Wrap(err, "find start command")
 	}
-	fmt.Println("START COMMAND:", startCommand)
 
 	// TODO expose port 8080 (and set PORT env)
 	ctr2, err := client.ContainerCreate(ctx, &container.Config{
-		Image: "dgodd/windows2016fs",
+		Image: baseImageRef,
 		Cmd:   []string{"/tmp/lifecycle/launcher.exe", "/home/vcap/app", startCommand, ""},
 		Env: []string{
-  			"PORT=8080",
-  			"VCAP_APP_HOST=0.0.0.0",
+			"PORT=8080",
+			"VCAP_APP_HOST=0.0.0.0",
 			"VCAP_APP_PORT=8080",
 		},
 		ExposedPorts: nat.PortSet{
@@ -242,7 +235,8 @@ func ConvertZipToTar(path, prefix string) (io.Reader, error) {
 }
 
 func main() {
-	var imageRef = pflag.String("image", "fixme/myapp", "name of docker image to build")
+	var imageRef = pflag.String("image", "cfwindowsstager/myapp", "name of docker image to build")
+	var baseImageRef = pflag.String("base", "dgodd/windows2016fs", "name of docker image base staging on, must contain lifecycle")
 	var appPath = pflag.String("app", ".", "path to app to push")
 	var buildpacks = pflag.StringSlice("buildpack", []string{"https://github.com/cloudfoundry/hwc-buildpack/releases/download/v3.1.3/hwc-buildpack-windows2016-v3.1.3.zip"}, "buildpacks to use, either http url or local zip file")
 	pflag.Parse()
@@ -253,21 +247,12 @@ func main() {
 		fmt.Println("ERROR:", err)
 		os.Exit(1)
 	}
-	// TODO there is some bug with absolute path that stalls builder.exe, I don't know what, but relative appears to work
-	// for idx, path := range *buildpacks {
-	// 	(*buildpacks)[idx], err = filepath.Abs(path)
-	// 	if err != nil {
-	// 		fmt.Println("ERROR:", err)
-	// 		os.Exit(1)
-	// 	}
-	// }
 
-	fmt.Println("ARGS:", *imageRef, *appPath, *buildpacks)
-
-	if err := stage(*imageRef, *appPath, *buildpacks); err != nil {
+	if err := stage(*imageRef, *baseImageRef, *appPath, *buildpacks); err != nil {
 		fmt.Println("ERROR:", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("\nTo run:\n  docker run --rm --name=fixme_myapp -d -e PORT=8080 -p 8080:8080 fixme/myapp\nThen to stop:\n  docker kill fixme_myapp")
+	md5ImageRef := fmt.Sprintf("%x", md5.Sum([]byte(*imageRef)))
+	fmt.Printf("\nTo run:\n  docker run --rm --name=%s -d -e PORT=8080 -p 8080:8080 %s\nThen to stop:\n  docker kill %s\n", md5ImageRef, *imageRef, md5ImageRef)
 }

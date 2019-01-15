@@ -22,6 +22,7 @@ RUN GOPATH=/diego CGO_ENABLED=0 go install -a -installsuffix static "${bal_repo}
 
 FROM cloudfoundry/${stack}
 COPY --from=lifecycle /diego/bin /tmp/lifecycle
+RUN ln -s builder /tmp/lifecycle/builder.exe && ln -s launcher /tmp/lifecycle/launcher.exe
 ENV CF_STACK ${stack}
 ENV CF_STACK cflinuxfs3
 WORKDIR /home/vcap
