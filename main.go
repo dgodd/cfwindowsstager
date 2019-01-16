@@ -118,6 +118,12 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		return errors.Wrap(err, "copy app tar to container")
 	}
 
+	if _, err := client.ContainerCommit(ctx, ctr.ID, dockertypes.ContainerCommitOptions{
+		Reference: "fixme/remove-me/prerunbuilder",
+	}); err != nil {
+		return errors.Wrap(err, "create image from container")
+	}
+
 	if err := RunContainer(client, ctx, ctr.ID, os.Stdout, os.Stderr); err != nil {
 		return errors.Wrap(err, "container run")
 	}
@@ -198,6 +204,10 @@ func CopyDropletToContainer(client *dockercli.Client, ctx context.Context, srcID
 	tr := tar.NewReader(rc)
 	_, err = tr.Next()
 	if err != nil {
+		return err
+	}
+
+	if err := MakeDirInContainer(client, ctx, destID, "/home/vcap"); err != nil {
 		return err
 	}
 
@@ -316,8 +326,8 @@ func ConvertZipToTar(path, prefix string) (io.Reader, error) {
 
 func main() {
 	var imageRef = pflag.String("image", "cfwindowsstager/myapp", "name of docker image to build")
-	var baseImageRef = pflag.String("base", "cloudfoundry/windows2016fs:1803", "name of docker image base staging on, must contain lifecycle")
-	var stack = pflag.String("stack", "windows2016", "name of stack for docker image")
+	var baseImageRef = pflag.String("base", "cloudfoundry/windows2016fs", "name of docker image base staging on, must contain lifecycle")
+	var stack = pflag.String("stack", "windows2016fs", "name of stack for docker image")
 	var appPath = pflag.String("app", ".", "path to app to push")
 	var buildpacks = pflag.StringSlice("buildpack", []string{"https://github.com/cloudfoundry/hwc-buildpack/releases/download/v3.1.3/hwc-buildpack-windows2016-v3.1.3.zip"}, "buildpacks to use, either http url or local zip file")
 	pflag.Parse()
