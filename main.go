@@ -63,14 +63,21 @@ func RunContainer(d *dockercli.Client, ctx context.Context, id string, stdout io
 	return <-copyErr
 }
 
-func stage(imageRef, baseImageRef, appPath string, buildpacks []string) error {
+func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) error {
 	client, err := NewClient()
+
+	builderPath := "/lifecycle/builder"
+	launcherPath := "/lifecycle/launcher"
+	if strings.HasPrefix(stack, "windows") {
+		builderPath += ".exe"
+		launcherPath += ".exe"
+	}
 
 	ctx := context.Background()
 	ctr, err := client.ContainerCreate(ctx, &container.Config{
 		Image: baseImageRef,
 		Cmd: []string{
-			"/tmp/lifecycle/builder.exe",
+			builderPath,
 			"-buildDir=/home/vcap/app",
 			"-buildpacksDir=/buildpacks",
 			// "-buildArtifactsCacheDir=/tmp/cache",
@@ -80,11 +87,23 @@ func stage(imageRef, baseImageRef, appPath string, buildpacks []string) error {
 			"-skipDetect", // TODO configurable, maybe based on number of buildpacks?
 			// "-skipCertVerify", // skip SSL certificate verification
 		},
+		Env:        []string{"CF_STACK=" + stack},
+		WorkingDir: "/home/vcap",
 	}, nil, nil, "")
 	if err != nil {
 		return errors.Wrap(err, "container create")
 	}
 	defer client.ContainerRemove(ctx, ctr.ID, dockertypes.ContainerRemoveOptions{})
+
+	if err := CopyLifecycleToContainer(client, ctx, ctr.ID); err != nil {
+		return err
+	}
+
+	for _, dir := range []string{"/buildpacks", "/home/vcap/app"} {
+		if err := MakeDirInContainer(client, ctx, ctr.ID, dir); err != nil {
+			return err
+		}
+	}
 
 	if err := CopyBuildpacksToContainer(client, ctx, ctr.ID, buildpacks); err != nil {
 		return errors.Wrap(err, "copy local buildpacks to container")
@@ -96,6 +115,12 @@ func stage(imageRef, baseImageRef, appPath string, buildpacks []string) error {
 	}
 	if err := client.CopyToContainer(ctx, ctr.ID, "/home/vcap/app", tr, dockertypes.CopyToContainerOptions{}); err != nil {
 		return errors.Wrap(err, "copy app tar to container")
+	}
+
+	if _, err := client.ContainerCommit(ctx, ctr.ID, dockertypes.ContainerCommitOptions{
+		Reference: "fixme/remove-me/prerunbuilder",
+	}); err != nil {
+		return errors.Wrap(err, "create image from container")
 	}
 
 	if err := RunContainer(client, ctx, ctr.ID, os.Stdout, os.Stderr); err != nil {
@@ -110,12 +135,14 @@ func stage(imageRef, baseImageRef, appPath string, buildpacks []string) error {
 	// TODO expose port 8080 (and set PORT env)
 	ctr2, err := client.ContainerCreate(ctx, &container.Config{
 		Image: baseImageRef,
-		Cmd:   []string{"/tmp/lifecycle/launcher.exe", "/home/vcap/app", startCommand, ""},
+		Cmd:   []string{launcherPath, "/home/vcap/app", startCommand, ""},
 		Env: []string{
 			"PORT=8080",
 			"VCAP_APP_HOST=0.0.0.0",
 			"VCAP_APP_PORT=8080",
+			"CF_STACK=" + stack,
 		},
+		WorkingDir: "/home/vcap",
 		ExposedPorts: nat.PortSet{
 			"8080": struct{}{},
 		},
@@ -124,6 +151,10 @@ func stage(imageRef, baseImageRef, appPath string, buildpacks []string) error {
 		return errors.Wrap(err, "create container to commit")
 	}
 	defer client.ContainerRemove(ctx, ctr2.ID, dockertypes.ContainerRemoveOptions{})
+
+	if err := CopyLifecycleToContainer(client, ctx, ctr2.ID); err != nil {
+		return err
+	}
 
 	if err := CopyDropletToContainer(client, ctx, ctr.ID, ctr2.ID); err != nil {
 		return errors.Wrap(err, "copy droplet to base container")
@@ -184,6 +215,30 @@ func CopyDropletToContainer(client *dockercli.Client, ctx context.Context, srcID
 	return nil
 }
 
+func MakeDirInContainer(client *dockercli.Client, ctx context.Context, ctrID string, dir string) error {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	hdr := &tar.Header{Typeflag: tar.TypeDir, Name: dir, Mode: int64(0755)}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	tw.Close()
+
+	return client.CopyToContainer(ctx, ctrID, "/", &buf, dockertypes.CopyToContainerOptions{})
+}
+
+func CopyLifecycleToContainer(client *dockercli.Client, ctx context.Context, ctrID string) error {
+	rc, err := os.Open(filepath.Join(os.Getenv("HOME"), ".cfwindowsstager.lifecycle.tar"))
+	if err != nil {
+		return errors.Wrap(err, "open lifecycle.tar from home")
+	}
+	defer rc.Close()
+	if err := client.CopyToContainer(ctx, ctrID, "/", rc, dockertypes.CopyToContainerOptions{}); err != nil {
+		return errors.Wrap(err, "copy lifecycle tar to container")
+	}
+	return nil
+}
+
 func CopyBuildpacksToContainer(client *dockercli.Client, ctx context.Context, ctrID string, buildpacks []string) error {
 	for _, bpPath := range buildpacks {
 		if strings.HasPrefix(bpPath, "https://") || strings.HasPrefix(bpPath, "http://") {
@@ -236,7 +291,8 @@ func ConvertZipToTar(path, prefix string) (io.Reader, error) {
 
 func main() {
 	var imageRef = pflag.String("image", "cfwindowsstager/myapp", "name of docker image to build")
-	var baseImageRef = pflag.String("base", "dgodd/windows2016fs", "name of docker image base staging on, must contain lifecycle")
+	var baseImageRef = pflag.String("base", "cloudfoundry/windows2016fs", "name of docker image base staging on, must contain lifecycle")
+	var stack = pflag.String("stack", "windows2016fs", "name of stack for docker image")
 	var appPath = pflag.String("app", ".", "path to app to push")
 	var buildpacks = pflag.StringSlice("buildpack", []string{"https://github.com/cloudfoundry/hwc-buildpack/releases/download/v3.1.3/hwc-buildpack-windows2016-v3.1.3.zip"}, "buildpacks to use, either http url or local zip file")
 	pflag.Parse()
@@ -248,7 +304,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := stage(*imageRef, *baseImageRef, *appPath, *buildpacks); err != nil {
+	if err := stage(*imageRef, *baseImageRef, *stack, *appPath, *buildpacks); err != nil {
 		fmt.Println("ERROR:", err)
 		os.Exit(1)
 	}
