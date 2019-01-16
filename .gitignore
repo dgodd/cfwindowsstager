@@ -1,4 +1,6 @@
 /cfwindowsstager
 /cfwindowsstager.exe
+/cfwindowsstager.darwin
+/cfwindowsstager.linux
 /lifecycle.tar
 /lifecycle.tar.gz
