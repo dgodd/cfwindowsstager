@@ -18,10 +18,12 @@ import (
 	"github.com/docker/docker/api/types/container"
 	dockercli "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 func NewClient() (*dockercli.Client, error) {
@@ -75,6 +77,16 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 	}
 
 	ctx := context.Background()
+
+	rc, err := client.ImagePull(ctx, baseImageRef, dockertypes.ImagePullOptions{All: false})
+	if err != nil {
+		return errors.Wrap(err, "container create")
+	}
+	defer rc.Close()
+	if err := jsonmessage.DisplayJSONMessagesStream(rc, os.Stdout, os.Stdout.Fd(), terminal.IsTerminal(int(os.Stdout.Fd())), nil); err != nil {
+		return err
+	}
+
 	ctr, err := client.ContainerCreate(ctx, &container.Config{
 		Image: baseImageRef,
 		Cmd: []string{

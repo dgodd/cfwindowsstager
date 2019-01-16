@@ -15,6 +15,7 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.3.0 // indirect
 	github.com/spf13/pflag v1.0.3
+	golang.org/x/crypto v0.0.0-20180904163835-0709b304e793
 	golang.org/x/net v0.0.0-20190108225652-1e06a53dbb7e // indirect
 	golang.org/x/sys v0.0.0-20190109145017-48ac38b7c8cb // indirect
 )
