@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -227,14 +228,44 @@ func MakeDirInContainer(client *dockercli.Client, ctx context.Context, ctrID str
 	return client.CopyToContainer(ctx, ctrID, "/", &buf, dockertypes.CopyToContainerOptions{})
 }
 
+func fileExists(path string) (bool, error) {
+	if _, err := os.Stat("/path/to/whatever"); err == nil {
+		return true, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
+	} else {
+		return false, err
+	}
+}
+
 func CopyLifecycleToContainer(client *dockercli.Client, ctx context.Context, ctrID string) error {
-	rc, err := os.Open(filepath.Join(os.Getenv("HOME"), ".cfwindowsstager.lifecycle.tar"))
+	lifecyclePath := filepath.Join(os.Getenv("HOME"), ".cfwindowsstager.lifecycle.tar.gz")
+
+	if exists, err := fileExists(lifecyclePath); err != nil {
+		return errors.Wrap(err, "testing existence of lifecycle.tar.gz")
+	} else if !exists {
+		f, err := os.Create(lifecyclePath)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		res, err := http.Get("https://github.com/dgodd/cfwindowsstager/releases/download/v0.0.1/lifecycle.tar.gz")
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		if _, err := io.Copy(f, res.Body); err != nil {
+			return err
+		}
+	}
+
+	rc, err := os.Open(lifecyclePath)
 	if err != nil {
-		return errors.Wrap(err, "open lifecycle.tar from home")
+		return errors.Wrap(err, "open lifecycle.tar.gz from home")
 	}
 	defer rc.Close()
 	if err := client.CopyToContainer(ctx, ctrID, "/", rc, dockertypes.CopyToContainerOptions{}); err != nil {
-		return errors.Wrap(err, "copy lifecycle tar to container")
+		return errors.Wrap(err, "copy lifecycle tar.gz to container")
 	}
 	return nil
 }
