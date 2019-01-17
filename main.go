@@ -87,19 +87,23 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		return err
 	}
 
+	stageCmd := []string{
+		builderPath,
+		"-buildDir=/home/vcap/app",
+		"-buildpacksDir=/buildpacks",
+		"-outputDroplet=/tmp/droplet",
+		"-outputMetadata=/tmp/result.json",
+		"-buildpackOrder=" + strings.Join(buildpacks, ","),
+		// "-buildArtifactsCacheDir=/tmp/cache",
+		// "-skipCertVerify", // skip SSL certificate verification
+	}
+	if len(buildpacks) >= 2 {
+		stageCmd = append(stageCmd, "-skipDetect") // Multi buildpack mode
+	}
+
 	ctr, err := client.ContainerCreate(ctx, &container.Config{
-		Image: baseImageRef,
-		Cmd: []string{
-			builderPath,
-			"-buildDir=/home/vcap/app",
-			"-buildpacksDir=/buildpacks",
-			// "-buildArtifactsCacheDir=/tmp/cache",
-			"-outputDroplet=/tmp/droplet",
-			"-outputMetadata=/tmp/result.json",
-			"-buildpackOrder=" + strings.Join(buildpacks, ","),
-			"-skipDetect", // TODO configurable, maybe based on number of buildpacks?
-			// "-skipCertVerify", // skip SSL certificate verification
-		},
+		Image:      baseImageRef,
+		Cmd:        stageCmd,
 		Env:        []string{"CF_STACK=" + stack},
 		WorkingDir: "/home/vcap",
 	}, nil, nil, "")
@@ -338,8 +342,8 @@ func ConvertZipToTar(path, prefix string) (io.Reader, error) {
 
 func main() {
 	var imageRef = pflag.String("image", "cfwindowsstager/myapp", "name of docker image to build")
-	var baseImageRef = pflag.String("base", "cloudfoundry/windows2016fs", "name of docker image base staging on, must contain lifecycle")
-	var stack = pflag.String("stack", "windows2016fs", "name of stack for docker image")
+	var baseImageRef = pflag.String("base", "cloudfoundry/windows2016fs:1803", "name of docker image base staging on, must contain lifecycle")
+	var stack = pflag.String("stack", "windows2016", "name of stack for docker image")
 	var appPath = pflag.String("app", ".", "path to app to push")
 	var buildpacks = pflag.StringSlice("buildpack", []string{"https://github.com/cloudfoundry/hwc-buildpack/releases/download/v3.1.3/hwc-buildpack-windows2016-v3.1.3.zip"}, "buildpacks to use, either http url or local zip file")
 	pflag.Parse()
