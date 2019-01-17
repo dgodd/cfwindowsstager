@@ -139,6 +139,7 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 	}); err != nil {
 		return errors.Wrap(err, "create image from container")
 	}
+	fmt.Println("DG: DEBUG: create image: fixme/remove-me/prerunbuilder")
 
 	if err := RunContainer(client, ctx, ctr.ID, os.Stdout, os.Stderr); err != nil {
 		return errors.Wrap(err, "container run")
