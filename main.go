@@ -186,7 +186,6 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		if _, err := io.Copy(f, rc); err != nil {
 			return err
 		}
-		fmt.Println("DG: CACHE TAR FILE:", cacheTarFile)
 	}
 
 	if _, err := client.ContainerCommit(ctx, ctr2.ID, dockertypes.ContainerCommitOptions{
