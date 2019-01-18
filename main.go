@@ -69,6 +69,7 @@ func RunContainer(d *dockercli.Client, ctx context.Context, id string, stdout io
 func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) error {
 	client, err := NewClient()
 
+	cacheTarFile := fmt.Sprintf("/tmp/cfwindowsstager.%x.tar", md5.Sum([]byte(imageRef)))
 	builderPath := "/lifecycle/builder"
 	launcherPath := "/lifecycle/launcher"
 	if strings.HasPrefix(stack, "windows") {
@@ -94,7 +95,7 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		"-outputDroplet=/tmp/droplet",
 		"-outputMetadata=/tmp/result.json",
 		"-buildpackOrder=" + strings.Join(buildpacks, ","),
-		// "-buildArtifactsCacheDir=/tmp/cache",
+		"-buildArtifactsCacheDir=/tmp/cache",
 		// "-skipCertVerify", // skip SSL certificate verification
 	}
 	if len(buildpacks) >= 2 {
@@ -126,6 +127,10 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		return errors.Wrap(err, "copy local buildpacks to container")
 	}
 
+	if err := CopyCacheToContainer(client, ctx, ctr.ID, cacheTarFile); err != nil {
+		return errors.Wrap(err, "copy cache to container")
+	}
+
 	tr, err := archive.TarWithOptions(appPath, &archive.TarOptions{})
 	if err != nil {
 		return errors.Wrap(err, "tar app before copying to container")
@@ -143,7 +148,6 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		return errors.Wrap(err, "find start command")
 	}
 
-	// TODO expose port 8080 (and set PORT env)
 	ctr2, err := client.ContainerCreate(ctx, &container.Config{
 		Image: baseImageRef,
 		Cmd:   []string{launcherPath, "/home/vcap/app", startCommand, ""},
@@ -169,6 +173,20 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 
 	if err := CopyDropletToContainer(client, ctx, ctr.ID, ctr2.ID); err != nil {
 		return errors.Wrap(err, "copy droplet to base container")
+	}
+
+	if rc, _, err := client.CopyFromContainer(ctx, ctr.ID, "/tmp/cache"); err != nil {
+		return err
+	} else {
+		defer rc.Close()
+		f, err := os.Create(cacheTarFile)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(f, rc); err != nil {
+			return err
+		}
+		fmt.Println("DG: CACHE TAR FILE:", cacheTarFile)
 	}
 
 	if _, err := client.ContainerCommit(ctx, ctr2.ID, dockertypes.ContainerCommitOptions{
@@ -302,6 +320,17 @@ func CopyBuildpacksToContainer(client *dockercli.Client, ctx context.Context, ct
 		}
 	}
 	return nil
+}
+
+func CopyCacheToContainer(client *dockercli.Client, ctx context.Context, ctrID string, cacheTarFile string) error {
+	f, err := os.Open(cacheTarFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	return client.CopyToContainer(ctx, ctrID, "/tmp/", f, dockertypes.CopyToContainerOptions{})
 }
 
 func ConvertZipToTar(path, prefix string) (io.Reader, error) {
