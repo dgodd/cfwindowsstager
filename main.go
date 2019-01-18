@@ -134,13 +134,6 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		return errors.Wrap(err, "copy app tar to container")
 	}
 
-	if _, err := client.ContainerCommit(ctx, ctr.ID, dockertypes.ContainerCommitOptions{
-		Reference: "fixme/remove-me/prerunbuilder",
-	}); err != nil {
-		return errors.Wrap(err, "create image from container")
-	}
-	fmt.Println("DG: DEBUG: create image: fixme/remove-me/prerunbuilder")
-
 	if err := RunContainer(client, ctx, ctr.ID, os.Stdout, os.Stderr); err != nil {
 		return errors.Wrap(err, "container run")
 	}
