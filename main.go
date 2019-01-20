@@ -69,12 +69,18 @@ func RunContainer(d *dockercli.Client, ctx context.Context, id string, stdout io
 func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) error {
 	client, err := NewClient()
 
-	cacheTarFile := fmt.Sprintf("/tmp/cfwindowsstager.%x.tar", md5.Sum([]byte(imageRef)))
 	builderPath := "/lifecycle/builder"
 	launcherPath := "/lifecycle/launcher"
 	if strings.HasPrefix(stack, "windows") {
 		builderPath += ".exe"
 		launcherPath += ".exe"
+	}
+	var cacheTarFile string
+	for _, dir := range []string{"TEMP", "TMPDIR", "HOME", "HOMEPATH"} {
+		if os.Getenv(dir) != "" {
+			cacheTarFile = filepath.Join(os.Getenv(dir), fmt.Sprintf("cfwindowsstager.%x.tar", md5.Sum([]byte(imageRef))))
+			break
+		}
 	}
 
 	ctx := context.Background()
@@ -117,7 +123,7 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		return err
 	}
 
-	for _, dir := range []string{"/buildpacks", "/home/vcap/app"} {
+	for _, dir := range []string{"/buildpacks", "/home/vcap/app", "/tmp"} {
 		if err := MakeDirInContainer(client, ctx, ctr.ID, dir); err != nil {
 			return err
 		}
@@ -127,8 +133,10 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		return errors.Wrap(err, "copy local buildpacks to container")
 	}
 
-	if err := CopyCacheToContainer(client, ctx, ctr.ID, cacheTarFile); err != nil {
-		return errors.Wrap(err, "copy cache to container")
+	if cacheTarFile != "" {
+		if err := CopyCacheToContainer(client, ctx, ctr.ID, cacheTarFile); err != nil {
+			return errors.Wrap(err, "copy cache to container")
+		}
 	}
 
 	tr, err := archive.TarWithOptions(appPath, &archive.TarOptions{})
@@ -175,16 +183,18 @@ func stage(imageRef, baseImageRef, stack, appPath string, buildpacks []string) e
 		return errors.Wrap(err, "copy droplet to base container")
 	}
 
-	if rc, _, err := client.CopyFromContainer(ctx, ctr.ID, "/tmp/cache"); err != nil {
-		return err
-	} else {
-		defer rc.Close()
-		f, err := os.Create(cacheTarFile)
-		if err != nil {
+	if cacheTarFile != "" {
+		if rc, _, err := client.CopyFromContainer(ctx, ctr.ID, "/tmp/cache"); err != nil {
 			return err
-		}
-		if _, err := io.Copy(f, rc); err != nil {
-			return err
+		} else {
+			defer rc.Close()
+			f, err := os.Create(cacheTarFile)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(f, rc); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -270,7 +280,13 @@ func fileExists(path string) (bool, error) {
 }
 
 func CopyLifecycleToContainer(client *dockercli.Client, ctx context.Context, ctrID string) error {
-	lifecyclePath := filepath.Join(os.Getenv("HOME"), ".cfwindowsstager.lifecycle.tar.gz")
+	lifecyclePath := ".cfwindowsstager.lifecycle.tar.gz"
+	for _, dir := range []string{"TEMP", "TMPDIR", "HOME", "HOMEPATH"} {
+		if os.Getenv(dir) != "" {
+			lifecyclePath = filepath.Join(os.Getenv(dir), lifecyclePath)
+			break
+		}
+	}
 
 	if exists, err := fileExists(lifecyclePath); err != nil {
 		return errors.Wrap(err, "testing existence of lifecycle.tar.gz")
