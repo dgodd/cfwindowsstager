@@ -10,4 +10,10 @@ means that we need to use a batch file to pass control to powershell
 
 **bin/supply.bat**
 ```bat
+@ECHO OFF
+SET ScriptDir=%~dp0
+PowerShell -NoProfile -ExecutionPolicy Bypass -Command "& '%ScriptDir%supply.ps1' %1 %2 %3 %4";
+```
 
+We can now start working on the interesting part of our extension buildpack,
+`supply.ps1`. To start with we will 
