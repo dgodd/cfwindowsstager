@@ -103,6 +103,8 @@ having download
 [example-extension-buildpack](https://github.com/dgodd/example-extension-buildpack):
 
 ```powershell
+git clone --single-branch --branch v0.1.2 https://github.com/dgodd/example-extension-buildpack
+cd example-extension-buildpack
 .\scripts\build.ps1
 cfwindowsstager.exe --app .\fixtures\simple\ --buildpack .\example_extension_buildpack-windows2016-v0.1.2.zip --buildpack https://github.com/dgodd/go-windows-buildpack/releases/download/v0.0.2/go_buildpack-windows2016-v0.0.2.zip
 ```
