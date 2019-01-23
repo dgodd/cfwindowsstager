@@ -95,12 +95,24 @@ This means that if our application executed `mysupplied.bat` during run time,
 then windows would find our supplied file on the path and run it (much more
 convenient than needing to know the full path to the file).
 
-We can see an example the above described buildpack at [example-extension-buildpack](https://github.com/dgodd/example-extension-buildpack) and a sample program which takes advantage of a sample [go-windows-buildpack](https://github.com/dgodd/go-windows-buildpack), so having download [example-extension-buildpack](https://github.com/dgodd/example-extension-buildpack):
+We can see an example the above described buildpack at
+[example-extension-buildpack](https://github.com/dgodd/example-extension-buildpack)
+and a sample program which takes advantage of a sample
+[go-windows-buildpack](https://github.com/dgodd/go-windows-buildpack), so
+having download
+[example-extension-buildpack](https://github.com/dgodd/example-extension-buildpack):
 
 ```powershell
 .\scripts\build.ps1
 cfwindowsstager.exe --app .\fixtures\simple\ --buildpack .\example_extension_buildpack-windows2016-v0.1.2.zip --buildpack https://github.com/dgodd/go-windows-buildpack/releases/download/v0.0.2/go_buildpack-windows2016-v0.0.2.zip
 ```
 
-Now (having run this new image) we can see that ```powershell Invoke-WebRequest -Uri http://127.0.0.1:8080/env -UseBasicParsing```
+Now (having run this new image) we can see that
+```powershell
+Invoke-WebRequest -Uri http://127.0.0.1:8080/-UseBasicParsing
+```
+calls `mysupllied.bat` and displays the text we provided.
 
+## Next steps
+
+This above should provide everything required to write an extension buildpack, however, if instead you need to write a full buildpack, see [write a buildpack](https://github.com/dgodd/cfwindowsstager/blob/docs/docs/write_a_windows_buildpack.md)
